@@ -20,18 +20,18 @@ app = FastAPI(
 
 # 🔹 URLs de los archivos "pequeños" (quarters o recortes)
 URL_ADN_A_QUARTER = (
-    "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1/adn_quarter_A.fna"
+    "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1.0.0/adn_quarter_A.fna"
 )
 URL_ADN_B_QUARTER = (
-    "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1/adn_quarter_B.fna"
+    "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1.0.0/adn_quarter_B.fna"
 )
 
 # 🔹 URLs de los archivos GRANDES (los ~1.2 GB que cortaste)
 URL_ADN_A_GRANDE = (
-    "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1/GCA_000001405.29_GRCh38.p14--_genomic.fna"
+    "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1.0.0/GCA_000001405.29_GRCh38.p14--_genomic.fna"
 )
 URL_ADN_B_GRANDE = (
-    "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1/GCF_000001405.40_GRCh38.p14--_genomic.fna"
+    "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1.0.0/GCF_000001405.40_GRCh38.p14--_genomic.fna"
 )
 
 # LÍNEAS POR BATCH para comparación grande
