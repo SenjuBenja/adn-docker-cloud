@@ -86,14 +86,21 @@ def comparar_listas(A: list[str], B: list[str]) -> str:
 @app.get("/comparar", response_class=PlainTextResponse)
 def comparar():
     """
-    Compara las primeras 2000 líneas de los archivos A y B.
-    Útil para pruebas rápidas en Render.
-    """
-    A = obtener_primeras_n_lineas(URL_ADN_A_QUARTER, n=2000)
-    B = obtener_primeras_n_lineas(URL_ADN_B_QUARTER, n=2000)
+    Compara los archivos 'quarter' completos (no solo primeras líneas).
 
-    reporte = comparar_listas(A, B)
-    return reporte
+    Usa la misma lógica de streaming por batches, pero recorre TODO el archivo.
+    """
+    ruta = comparar_archivos_grandes(
+        URL_ADN_A_QUARTER,
+        URL_ADN_B_QUARTER,
+        max_batches=None,  # None = procesar todas las líneas
+    )
+
+    # Leemos el archivo de reporte y lo devolvemos como texto
+    with ruta.open("r", encoding="utf-8") as f:
+        contenido = f.read()
+
+    return contenido
 
 
 # ------------------------------------------------------------
@@ -171,18 +178,18 @@ def comparar_archivos_grandes(
 # ------------------------------------------------------------
 # Endpoint /comparar_grande -> streaming por batches
 # ------------------------------------------------------------
-@app.get("/comparar_grande")
-def comparar_grande(modo: str = "render"):
+@app.get("/comparar_grande", response_class=PlainTextResponse)
+def comparar_grande(modo: str = "full"):
     """
-    Compara los archivos GRANDES en modo streaming.
+    Compara los archivos grandes.
 
-    - modo=render  -> procesa p.ej. 10 batches de 10k líneas (100k líneas).
-    - modo=completo -> recorre TODO el archivo (mejor hacerlo en local).
+    - modo=full   -> recorre TODO el archivo (puede tardar varios minutos).
+    - modo=render -> procesa solo algunos batches, si algún día quieres algo rápido.
     """
     if modo == "render":
-        max_batches = 10  # 10 * 10k = 100k líneas
+        max_batches = 5  # 50k líneas aprox.
     else:
-        max_batches = None  # sin límite
+        max_batches = None  # recorrer todo
 
     ruta = comparar_archivos_grandes(
         URL_ADN_A_GRANDE,
@@ -190,12 +197,10 @@ def comparar_grande(modo: str = "render"):
         max_batches=max_batches,
     )
 
-    # Devolvemos el archivo como descarga
-    return FileResponse(
-        ruta,
-        media_type="text/plain",
-        filename=ruta.name,
-    )
+    with ruta.open("r", encoding="utf-8") as f:
+        contenido = f.read()
+
+    return contenido
 
 
 # ------------------------------------------------------------
