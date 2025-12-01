@@ -15,13 +15,11 @@ app = FastAPI(
 # URLs de tus archivos en GitHub Release
 # ---------------------------------------------------------------------
 
-# QUARTERS (para /comparar)  -> OJO: pon aquí tus enlaces reales
-URL_ADN_A_QUARTER = "https://github.com/tuuser/turepo/releases/download/v1/adn_quarter_A.fna"
-URL_ADN_B_QUARTER = "https://github.com/tuuser/turepo/releases/download/v1/adn_quarter_B.fna"
+URL_A = "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1.0.0/adn_quarter_A.fna"
+URL_B = "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1.0.0/adn_quarter_B.fna"
 
-# GRANDES (~1.2 GB) (para /comparar_grande) -> OJO: pon aquí tus enlaces reales
-URL_ADN_A_GRANDE = "https://github.com/tuuser/turepo/releases/download/v1/GCA_000001405.29_GRCh38.p14--_genomic.fna"
-URL_ADN_B_GRANDE = "https://github.com/tuuser/turepo/releases/download/v1/GCF_000001405.40_GRCh38.p14--_genomic.fna"
+URL_A = "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1.0.0/GCA_000001405.29_GRCh38.p14--_genomic.fna"
+URL_B = "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1.0.0/GCF_000001405.40_GRCh38.p14--_genomic.fna"
 
 # ---------------------------------------------------------------------
 # Helpers para comparación con QUARTERS (primeras 2000 líneas)
