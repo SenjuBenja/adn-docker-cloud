@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 import requests
 from fastapi import FastAPI, HTTPException
@@ -41,6 +41,76 @@ URL_ADN_B_GRANDE = (
 
 # 🔹 Líneas por batch para comparación grande (streaming)
 BATCH_LINES = 10_000  # 10k líneas
+
+
+# ------------------------------------------------------------
+# Utilidades para el endpoint "rápido" (quarters, primeras N líneas)
+# ------------------------------------------------------------
+def obtener_primeras_n_lineas(url: str, n: int = 2000) -> List[str]:
+    """
+    Descarga un archivo y devuelve sus primeras n líneas como texto (sin b'...').
+    Pensado para pruebas rápidas con los quarters.
+    """
+    resp = requests.get(url, stream=True)
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=500,
+            detail=f"No se pudo descargar: {url} (status {resp.status_code})",
+        )
+
+    lineas: List[str] = []
+    for linea in resp.iter_lines(decode_unicode=True):
+        if not linea:
+            continue
+        lineas.append(linea)
+        if len(lineas) >= n:
+            break
+    return lineas
+
+
+def comparar_listas(A: List[str], B: List[str]) -> str:
+    """
+    Compara dos listas línea por línea y devuelve un reporte en texto.
+    Formato tipo:
+
+    === Diferencia en línea 1 ===
+    A: ...
+    B: ...
+    """
+    max_len = max(len(A), len(B))
+    diffs: List[str] = []
+    cont = 0
+
+    for i in range(max_len):
+        la = A[i] if i < len(A) else ""
+        lb = B[i] if i < len(B) else ""
+        if la != lb:
+            cont += 1
+            diffs.append(f"=== Diferencia en línea {i+1} ===")
+            diffs.append(f"A: {la}")
+            diffs.append(f"B: {lb}")
+            diffs.append("")
+
+    header = f"Total de diferencias: {cont}\n\n"
+    return header + "\n".join(diffs)
+
+
+# ------------------------------------------------------------
+# Endpoint /comparar -> QUARTERS (muestra rápida)
+# ------------------------------------------------------------
+@app.get("/comparar", response_class=PlainTextResponse)
+def comparar():
+    """
+    Endpoint rápido:
+    Compara SOLO las primeras 2000 líneas de los archivos quarter A y B.
+
+    Si el endpoint grande peta, este sigue siendo usable para demostrar
+    la lógica de comparación sin reventar la RAM ni el tiempo de ejecución.
+    """
+    A = obtener_primeras_n_lineas(URL_ADN_A_QUARTER, n=2000)
+    B = obtener_primeras_n_lineas(URL_ADN_B_QUARTER, n=2000)
+    reporte = comparar_listas(A, B)
+    return reporte
 
 
 # ------------------------------------------------------------
@@ -108,38 +178,13 @@ def comparar_archivos_grandes(
                 if max_batches is not None and batch_number >= max_batches:
                     break
 
-        # Si te interesa manejar el caso en el que un archivo tiene
-        # más líneas que el otro, aquí podrías añadir lógica extra.
+        # Aquí podrías añadir lógica si un archivo tiene más líneas que el otro.
 
     print(
         f"Procesadas {line_number} líneas en {batch_number} batches. "
         f"Diferencias: {diferencias}"
     )
     return ruta_salida
-
-
-# ------------------------------------------------------------
-# Endpoint /comparar -> quarters COMPLETOS
-# ------------------------------------------------------------
-@app.get("/comparar", response_class=PlainTextResponse)
-def comparar():
-    """
-    Compara COMPLETAMENTE los archivos quarter A y B.
-
-    Usa la misma lógica de streaming por batches, pero sin límite
-    (max_batches=None), así recorre todas las líneas.
-    """
-    ruta = comparar_archivos_grandes(
-        URL_ADN_A_QUARTER,
-        URL_ADN_B_QUARTER,
-        max_batches=None,  # None = procesar todo el archivo
-    )
-
-    # Leemos el reporte y lo devolvemos como texto plano
-    with ruta.open("r", encoding="utf-8") as f:
-        contenido = f.read()
-
-    return contenido
 
 
 # ------------------------------------------------------------
@@ -151,7 +196,8 @@ def comparar_grande(modo: str = "full"):
     Compara los archivos GRANDES en modo streaming.
 
     - modo=full    -> recorre TODO el archivo (puede tardar varios minutos).
-    - modo=render  -> procesa sólo algunos batches, útil para pruebas rápidas.
+    - modo=render  -> procesa sólo algunos batches (p.ej. 10 * 10k líneas),
+                      útil para que la API no se caiga en Render si hay límites.
     """
     if modo == "render":
         max_batches = 10  # 10 * 10k = 100k líneas aprox.
