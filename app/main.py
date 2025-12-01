@@ -3,22 +3,25 @@ from typing import Optional
 
 import requests
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import PlainTextResponse, FileResponse
+from fastapi.responses import PlainTextResponse
 
 # ------------------------------------------------------------
 # Configuración de la API
 # ------------------------------------------------------------
 app = FastAPI(
     title="API de comparación de ADN (Docker + FastAPI)",
-    description="Compara archivos ADN descargados desde GitHub Releases o desde archivos grandes.",
+    description=(
+        "Compara archivos ADN descargados desde GitHub Releases, "
+        "incluyendo archivos grandes en modo streaming."
+    ),
     version="1.0.0",
 )
 
 # ------------------------------------------------------------
-# CONSTANTES: PON AQUÍ TUS URLs REALES
+# CONSTANTES: TUS URLs REALES
 # ------------------------------------------------------------
 
-# 🔹 URLs de los archivos "pequeños" (quarters o recortes)
+# 🔹 URLs de los archivos 'pequeños' (quarters o recortes)
 URL_ADN_A_QUARTER = (
     "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1.0.0/adn_quarter_A.fna"
 )
@@ -28,83 +31,20 @@ URL_ADN_B_QUARTER = (
 
 # 🔹 URLs de los archivos GRANDES (los ~1.2 GB que cortaste)
 URL_ADN_A_GRANDE = (
-    "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1.0.0/GCA_000001405.29_GRCh38.p14--_genomic.fna"
+    "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1.0.0/"
+    "GCA_000001405.29_GRCh38.p14--_genomic.fna"
 )
 URL_ADN_B_GRANDE = (
-    "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1.0.0/GCF_000001405.40_GRCh38.p14--_genomic.fna"
+    "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1.0.0/"
+    "GCF_000001405.40_GRCh38.p14--_genomic.fna"
 )
 
-# LÍNEAS POR BATCH para comparación grande
+# 🔹 Líneas por batch para comparación grande (streaming)
 BATCH_LINES = 10_000  # 10k líneas
 
 
 # ------------------------------------------------------------
-# Utilidades para archivos "pequeños" (primeras N líneas)
-# ------------------------------------------------------------
-def obtener_primeras_n_lineas(url: str, n: int = 2000) -> list[str]:
-    """Descarga un archivo y devuelve sus primeras n líneas (texto)."""
-    resp = requests.get(url, stream=True)
-    if resp.status_code != 200:
-        raise HTTPException(
-            status_code=500, detail=f"No se pudo descargar: {url} (status {resp.status_code})"
-        )
-
-    lineas: list[str] = []
-    for raw in resp.iter_lines():
-        if not raw:
-            continue
-        lineas.append(raw.decode("utf-8"))
-        if len(lineas) >= n:
-            break
-
-    return lineas
-
-
-def comparar_listas(A: list[str], B: list[str]) -> str:
-    """Compara dos listas línea por línea y devuelve un reporte en texto."""
-    max_len = max(len(A), len(B))
-    diffs: list[str] = []
-    cont = 0
-
-    for i in range(max_len):
-        la = A[i] if i < len(A) else ""
-        lb = B[i] if i < len(B) else ""
-        if la != lb:
-            cont += 1
-            diffs.append(f"=== Diferencia en línea {i+1} ===")
-            diffs.append(f"A: {la}")
-            diffs.append(f"B: {lb}")
-            diffs.append("")
-
-    header = f"Total de diferencias: {cont}\n\n"
-    return header + "\n".join(diffs)
-
-
-# ------------------------------------------------------------
-# Endpoint /comparar -> usa solo una parte (2000 líneas)
-# ------------------------------------------------------------
-@app.get("/comparar", response_class=PlainTextResponse)
-def comparar():
-    """
-    Compara los archivos 'quarter' completos (no solo primeras líneas).
-
-    Usa la misma lógica de streaming por batches, pero recorre TODO el archivo.
-    """
-    ruta = comparar_archivos_grandes(
-        URL_ADN_A_QUARTER,
-        URL_ADN_B_QUARTER,
-        max_batches=None,  # None = procesar todas las líneas
-    )
-
-    # Leemos el archivo de reporte y lo devolvemos como texto
-    with ruta.open("r", encoding="utf-8") as f:
-        contenido = f.read()
-
-    return contenido
-
-
-# ------------------------------------------------------------
-# Utilidades para archivos GRANDES (streaming por batches)
+# Utilidad para archivos GRANDES (streaming por batches)
 # ------------------------------------------------------------
 def comparar_archivos_grandes(
     url_a: str,
@@ -117,8 +57,8 @@ def comparar_archivos_grandes(
 
     Crea un archivo de texto con el reporte y devuelve la ruta a ese archivo.
 
-    - max_batches = None  -> recorre TODO el archivo (modo 'completo', ideal en local).
-    - max_batches = N     -> procesa sólo N batches (N * 10k líneas), útil para Render.
+    - max_batches = None  -> recorre TODO el archivo.
+    - max_batches = N     -> procesa sólo N batches (N * 10k líneas).
     """
 
     resp_a = requests.get(url_a, stream=True)
@@ -126,13 +66,16 @@ def comparar_archivos_grandes(
 
     if resp_a.status_code != 200:
         raise HTTPException(
-            status_code=500, detail=f"No se pudo descargar A: {url_a} (status {resp_a.status_code})"
+            status_code=500,
+            detail=f"No se pudo descargar A: {url_a} (status {resp_a.status_code})",
         )
     if resp_b.status_code != 200:
         raise HTTPException(
-            status_code=500, detail=f"No se pudo descargar B: {url_b} (status {resp_b.status_code})"
+            status_code=500,
+            detail=f"No se pudo descargar B: {url_b} (status {resp_b.status_code})",
         )
 
+    # decode_unicode=True => vienen como str, sin el prefijo b'...'
     iter_a = resp_a.iter_lines(decode_unicode=True)
     iter_b = resp_b.iter_lines(decode_unicode=True)
 
@@ -161,12 +104,12 @@ def comparar_archivos_grandes(
                 batch_number += 1
                 lines_in_batch = 0
 
-                # modo limitado (por ejemplo, Render)
+                # modo limitado (por ejemplo, pruebas rápidas)
                 if max_batches is not None and batch_number >= max_batches:
                     break
 
-        # Aquí podrías agregar lógica para cuando uno de los archivos
-        # tiene más líneas que el otro, si lo necesitas.
+        # Si te interesa manejar el caso en el que un archivo tiene
+        # más líneas que el otro, aquí podrías añadir lógica extra.
 
     print(
         f"Procesadas {line_number} líneas en {batch_number} batches. "
@@ -176,20 +119,44 @@ def comparar_archivos_grandes(
 
 
 # ------------------------------------------------------------
-# Endpoint /comparar_grande -> streaming por batches
+# Endpoint /comparar -> quarters COMPLETOS
+# ------------------------------------------------------------
+@app.get("/comparar", response_class=PlainTextResponse)
+def comparar():
+    """
+    Compara COMPLETAMENTE los archivos quarter A y B.
+
+    Usa la misma lógica de streaming por batches, pero sin límite
+    (max_batches=None), así recorre todas las líneas.
+    """
+    ruta = comparar_archivos_grandes(
+        URL_ADN_A_QUARTER,
+        URL_ADN_B_QUARTER,
+        max_batches=None,  # None = procesar todo el archivo
+    )
+
+    # Leemos el reporte y lo devolvemos como texto plano
+    with ruta.open("r", encoding="utf-8") as f:
+        contenido = f.read()
+
+    return contenido
+
+
+# ------------------------------------------------------------
+# Endpoint /comparar_grande -> archivos GRANDES
 # ------------------------------------------------------------
 @app.get("/comparar_grande", response_class=PlainTextResponse)
 def comparar_grande(modo: str = "full"):
     """
-    Compara los archivos grandes.
+    Compara los archivos GRANDES en modo streaming.
 
-    - modo=full   -> recorre TODO el archivo (puede tardar varios minutos).
-    - modo=render -> procesa solo algunos batches, si algún día quieres algo rápido.
+    - modo=full    -> recorre TODO el archivo (puede tardar varios minutos).
+    - modo=render  -> procesa sólo algunos batches, útil para pruebas rápidas.
     """
     if modo == "render":
-        max_batches = 5  # 50k líneas aprox.
+        max_batches = 10  # 10 * 10k = 100k líneas aprox.
     else:
-        max_batches = None  # recorrer todo
+        max_batches = None  # sin límite: todo el archivo
 
     ruta = comparar_archivos_grandes(
         URL_ADN_A_GRANDE,
