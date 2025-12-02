@@ -44,25 +44,37 @@ BATCH_LINES = 10_000  # 10k líneas
 
 
 # ------------------------------------------------------------
-# Utilidades para el endpoint "rápido" (quarters, primeras N líneas)
+# Helper general: descarga streaming con validación
 # ------------------------------------------------------------
-def obtener_primeras_n_lineas(url: str, n: int = 2000) -> List[str]:
-    """
-    Descarga un archivo y devuelve sus primeras n líneas como texto (sin b'...').
-    Pensado para pruebas rápidas con los quarters.
-    """
+def _descargar_stream(url: str) -> requests.Response:
     resp = requests.get(url, stream=True)
     if resp.status_code != 200:
         raise HTTPException(
             status_code=500,
             detail=f"No se pudo descargar: {url} (status {resp.status_code})",
         )
+    return resp
+
+
+# ------------------------------------------------------------
+# Utilidades para el endpoint "pequeño" (quarters, primeras N líneas)
+# ------------------------------------------------------------
+def obtener_primeras_n_lineas(url: str, n: int = 5000) -> List[str]:
+    """
+    Descarga un archivo y devuelve sus primeras n líneas como texto (sin b'...').
+    Pensado para pruebas rápidas con los quarters.
+    """
+    resp = _descargar_stream(url)
 
     lineas: List[str] = []
-    # decode_unicode=True -> ya vienen como str, no como bytes
-    for linea in resp.iter_lines(decode_unicode=True):
-        if not linea:
+    # iter_lines sin decode_unicode y decodificamos a mano => evitamos b'...'
+    for raw in resp.iter_lines():
+        if not raw:
             continue
+        if isinstance(raw, bytes):
+            linea = raw.decode("utf-8", errors="replace")
+        else:
+            linea = str(raw)
         lineas.append(linea)
         if len(lineas) >= n:
             break
@@ -103,18 +115,18 @@ def comparar_listas(A: List[str], B: List[str]) -> str:
 def comparar_pequeno():
     """
     Endpoint rápido:
-    Compara SOLO las primeras 2000 líneas de los archivos quarter A y B.
+    Compara SOLO las primeras 5000 líneas de los archivos quarter A y B.
 
-    Este es el endpoint ligero, el que debe responder rápido.
+    Este es el endpoint ligero, para demostrar la lógica sin reventar nada.
     """
-    A = obtener_primeras_n_lineas(URL_ADN_A_QUARTER, n=2000)
-    B = obtener_primeras_n_lineas(URL_ADN_B_QUARTER, n=2000)
+    A = obtener_primeras_n_lineas(URL_ADN_A_QUARTER, n=5000)
+    B = obtener_primeras_n_lineas(URL_ADN_B_QUARTER, n=5000)
     reporte = comparar_listas(A, B)
     return reporte
 
 
 # ------------------------------------------------------------
-# Utilidad para archivos GRANDES (streaming por batches)
+# Utilidad para archivos GRANDES (streaming por batches de 10k)
 # ------------------------------------------------------------
 def comparar_archivos_grandes(
     url_a: str,
@@ -131,23 +143,11 @@ def comparar_archivos_grandes(
     - max_batches = N     -> procesa sólo N batches (N * 10k líneas).
     """
 
-    resp_a = requests.get(url_a, stream=True)
-    resp_b = requests.get(url_b, stream=True)
+    resp_a = _descargar_stream(url_a)
+    resp_b = _descargar_stream(url_b)
 
-    if resp_a.status_code != 200:
-        raise HTTPException(
-            status_code=500,
-            detail=f"No se pudo descargar A: {url_a} (status {resp_a.status_code})",
-        )
-    if resp_b.status_code != 200:
-        raise HTTPException(
-            status_code=500,
-            detail=f"No se pudo descargar B: {url_b} (status {resp_b.status_code})",
-        )
-
-    # decode_unicode=True => vienen como str, sin el prefijo b'...'
-    iter_a = resp_a.iter_lines(decode_unicode=True)
-    iter_b = resp_b.iter_lines(decode_unicode=True)
+    iter_a = resp_a.iter_lines()
+    iter_b = resp_b.iter_lines()
 
     carpeta = Path("resultados")
     carpeta.mkdir(exist_ok=True)
@@ -159,7 +159,18 @@ def comparar_archivos_grandes(
     diferencias = 0
 
     with ruta_salida.open("w", encoding="utf-8") as out:
-        for linea_a, linea_b in zip(iter_a, iter_b):
+        for raw_a, raw_b in zip(iter_a, iter_b):
+            # Decodificar bytes a str
+            if isinstance(raw_a, bytes):
+                linea_a = raw_a.decode("utf-8", errors="replace")
+            else:
+                linea_a = str(raw_a)
+
+            if isinstance(raw_b, bytes):
+                linea_b = raw_b.decode("utf-8", errors="replace")
+            else:
+                linea_b = str(raw_b)
+
             line_number += 1
             lines_in_batch += 1
 
@@ -174,7 +185,7 @@ def comparar_archivos_grandes(
                 batch_number += 1
                 lines_in_batch = 0
 
-                # modo limitado (por ejemplo, pruebas rápidas)
+                # modo limitado (pruebas rápidas)
                 if max_batches is not None and batch_number >= max_batches:
                     break
 
@@ -188,22 +199,17 @@ def comparar_archivos_grandes(
 
 
 # ------------------------------------------------------------
-# Endpoint /comparar_grande -> archivos GRANDES
+# Endpoint /comparar_grande -> archivos GRANDES, FULL por defecto
 # ------------------------------------------------------------
 @app.get("/comparar_grande", response_class=PlainTextResponse)
-def comparar_grande(modo: str = "full"):
+def comparar_grande(max_batches: Optional[int] = 5):
     """
-    Compara los archivos GRANDES en modo streaming.
+    Compara los archivos GRANDES en modo streaming por batches de 10k líneas.
 
-    - modo=full    -> recorre TODO el archivo (puede tardar varios minutos).
-    - modo=render  -> procesa sólo algunos batches (p.ej. 10 * 10k líneas),
-                      útil para que la API no se caiga en Render si hay límites.
+    - Por defecto (max_batches = None) -> recorre TODO el archivo (modo FULL).
+    - Si quieres limitar para pruebas: /comparar_grande?max_batches=10
+      (10 * 10k líneas = 100k líneas aprox.)
     """
-    if modo == "render":
-        max_batches = 10  # 10 * 10k = 100k líneas aprox.
-    else:
-        max_batches = None  # sin límite: todo el archivo
-
     ruta = comparar_archivos_grandes(
         URL_ADN_A_GRANDE,
         URL_ADN_B_GRANDE,
