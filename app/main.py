@@ -3,6 +3,7 @@ from fastapi.responses import PlainTextResponse, FileResponse
 import requests
 from pathlib import Path
 
+#Pruebas dia 2 de diciembre 
 app = FastAPI(
     title="API de comparación de ADN (Docker + FastAPI)",
     description="Compara archivos ADN descargados desde GitHub Releases.",
