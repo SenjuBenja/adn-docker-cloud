@@ -59,6 +59,7 @@ def obtener_primeras_n_lineas(url: str, n: int = 2000) -> List[str]:
         )
 
     lineas: List[str] = []
+    # decode_unicode=True -> ya vienen como str, no como bytes
     for linea in resp.iter_lines(decode_unicode=True):
         if not linea:
             continue
@@ -96,16 +97,15 @@ def comparar_listas(A: List[str], B: List[str]) -> str:
 
 
 # ------------------------------------------------------------
-# Endpoint /comparar -> QUARTERS (muestra rápida)
+# Endpoint /comparar_pequeno -> QUARTERS (muestra rápida)
 # ------------------------------------------------------------
-@app.get("/comparar", response_class=PlainTextResponse)
-def comparar():
+@app.get("/comparar_pequeno", response_class=PlainTextResponse)
+def comparar_pequeno():
     """
     Endpoint rápido:
     Compara SOLO las primeras 2000 líneas de los archivos quarter A y B.
 
-    Si el endpoint grande peta, este sigue siendo usable para demostrar
-    la lógica de comparación sin reventar la RAM ni el tiempo de ejecución.
+    Este es el endpoint ligero, el que debe responder rápido.
     """
     A = obtener_primeras_n_lineas(URL_ADN_A_QUARTER, n=2000)
     B = obtener_primeras_n_lineas(URL_ADN_B_QUARTER, n=2000)
@@ -223,5 +223,5 @@ def comparar_grande(modo: str = "full"):
 def root():
     return {
         "mensaje": "API ADN Docker funcionando",
-        "endpoints": ["/comparar", "/comparar_grande"],
+        "endpoints": ["/comparar_pequeno", "/comparar_grande"],
     }
