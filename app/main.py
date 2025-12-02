@@ -174,14 +174,18 @@ def comparar_archivos_grandes_por_partes() -> Path:
     return salida
 
 
-@app.get("/comparar_grande")
+@app.get("/comparar_grande", response_class=FileResponse)
 def comparar_grande():
     """
-    Compara las PARTES GRANDES (part1 y part2) completamente (streaming).
+    Compara las PARTES GRANDES (part1 y part2) completamente (streaming)
+    y devuelve un archivo de texto con el reporte.
     """
     ruta = comparar_archivos_grandes_por_partes()
-    return FileResponse(ruta, media_type="text/plain", filename="reporte_grande.txt")
-
+    return FileResponse(
+        ruta,
+        media_type="text/plain",
+        filename="reporte_grande.txt"
+    )
 
 # ==============================================================
 # ROOT
