@@ -3,22 +3,33 @@ from fastapi.responses import PlainTextResponse, FileResponse
 import requests
 from pathlib import Path
 
-#Pruebas dia 2 de diciembre 
+# Pruebas dia 2 de diciembre
 app = FastAPI(
     title="API de comparación de ADN (Docker + FastAPI)",
     description="Compara archivos ADN descargados desde GitHub Releases.",
     version="1.0.0",
 )
 
-# URLs de tus archivos en GitHub Release (quarters)
+# ==============================================================
+# URLs de tus archivos en GitHub Release (quarters - ENDPOINT PEQUEÑO)
+# ==============================================================
+
 URL_A = "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1.0.0/adn_quarter_A.fna"
 URL_B = "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1.0.0/adn_quarter_B.fna"
 
-# URLs de archivos GRANDES (~1.2 GB)
-URL_A_GRANDE = "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1.0.0/GCA_000001405.29_GRCh38.p14--_genomic.fna"
-URL_B_GRANDE = "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1.0.0/GCF_000001405.40_GRCh38.p14--_genomic.fna"
+# ==============================================================
+# URLs de ARCHIVOS GRANDES POR PARTES (1.7 GB + 1.4 GB aprox)
+# ==============================================================
 
-BATCH_SIZE = 5000   # <<< Batch real para archivos grandes
+BASE_RELEASE = "https://github.com/SenjuBenja/adn-docker-cloud/releases/download/v1.0.0/"
+
+URL_A_PART1 = BASE_RELEASE + "GCA_000001405.29_GRCh38.p14--_genomic_part1.fna"
+URL_A_PART2 = BASE_RELEASE + "GCA_000001405.29_GRCh38.p14--_genomic_part2.fna"
+
+URL_B_PART1 = BASE_RELEASE + "GCF_000001405.40_GRCh38.p14--_genomic_part1.fna"
+URL_B_PART2 = BASE_RELEASE + "GCF_000001405.40_GRCh38.p14--_genomic_part2.fna"
+
+BATCH_SIZE = 5000   # Batch real para archivos grandes
 
 
 # ==============================================================
@@ -63,7 +74,7 @@ def comparar_listas(A: list, B: list) -> str:
 
 @app.get("/comparar", response_class=PlainTextResponse)
 def comparar():
-    """Descarga los archivos y genera el reporte."""
+    """Descarga los archivos pequeños y genera el reporte."""
     A = obtener_primeras_n_lineas(URL_A, n=2000)
     B = obtener_primeras_n_lineas(URL_B, n=2000)
 
@@ -72,14 +83,16 @@ def comparar():
 
 
 # ==============================================================
-# NUEVO ENDPOINT /comparar_grande  (STREAMING POR BATCHES 5000)
+# NUEVO FLUJO PARA /comparar_grande (PARTES 1 Y 2)
 # ==============================================================
 
-def comparar_archivos_grandes(url_a: str, url_b: str) -> Path:
+def comparar_parte(url_a: str, url_b: str, out, nombre_parte: str, line_start: int):
     """
-    Compara dos archivos gigantes EN COMPLETO usando streaming
-    y batches de 5000 líneas para evitar explosión de memoria.
-    Genera un archivo reporte y devuelve su ruta.
+    Compara una parte (part1 o part2) usando streaming y batches.
+    Escribe directamente en el archivo 'out'.
+    Devuelve:
+      - el nuevo número de línea (para seguir contando)
+      - cantidad de diferencias encontradas en esta parte
     """
     resp_a = requests.get(url_a, stream=True)
     resp_b = requests.get(url_b, stream=True)
@@ -92,39 +105,71 @@ def comparar_archivos_grandes(url_a: str, url_b: str) -> Path:
     iter_a = resp_a.iter_lines(decode_unicode=True)
     iter_b = resp_b.iter_lines(decode_unicode=True)
 
+    out.write(f"########## RESULTADOS {nombre_parte} ##########\n\n")
+
+    line_number = line_start
+    diff_count = 0
+
+    while True:
+        batch_a = []
+        batch_b = []
+
+        for _ in range(BATCH_SIZE):
+            try:
+                batch_a.append(next(iter_a))
+                batch_b.append(next(iter_b))
+            except StopIteration:
+                break
+
+        if not batch_a and not batch_b:
+            break  # fin de archivo de esta parte
+
+        for i in range(max(len(batch_a), len(batch_b))):
+            line_number += 1
+            la = batch_a[i] if i < len(batch_a) else ""
+            lb = batch_b[i] if i < len(batch_b) else ""
+
+            if la != lb:
+                diff_count += 1
+                out.write(f"=== {nombre_parte} - Diferencia en línea {line_number} ===\n")
+                out.write(f"A: {la}\n")
+                out.write(f"B: {lb}\n\n")
+
+    out.write(f"Total de diferencias en {nombre_parte}: {diff_count}\n\n\n")
+
+    return line_number, diff_count
+
+
+def comparar_archivos_grandes_por_partes() -> Path:
+    """
+    Compara:
+      - Parte 1 de A vs Parte 1 de B
+      - Parte 2 de A vs Parte 2 de B
+    usando streaming y batches de 5000 líneas.
+    Genera un único archivo reporte y devuelve su ruta.
+    """
     carpeta = Path("resultados")
     carpeta.mkdir(exist_ok=True)
     salida = carpeta / "reporte_grande.txt"
 
-    line_number = 0
-    diff_count = 0
-
     with salida.open("w", encoding="utf-8") as out:
-        while True:
-            batch_a = []
-            batch_b = []
+        line_number = 0
+        total_diffs = 0
 
-            for _ in range(BATCH_SIZE):
-                try:
-                    batch_a.append(next(iter_a))
-                    batch_b.append(next(iter_b))
-                except StopIteration:
-                    break
+        # PARTE 1
+        line_number, diffs1 = comparar_parte(
+            URL_A_PART1, URL_B_PART1, out, "PARTE 1", line_number
+        )
+        total_diffs += diffs1
 
-            if not batch_a and not batch_b:
-                break  # fin de archivo
+        # PARTE 2
+        line_number, diffs2 = comparar_parte(
+            URL_A_PART2, URL_B_PART2, out, "PARTE 2", line_number
+        )
+        total_diffs += diffs2
 
-            # comparar este batch
-            for i in range(max(len(batch_a), len(batch_b))):
-                line_number += 1
-                la = batch_a[i] if i < len(batch_a) else ""
-                lb = batch_b[i] if i < len(batch_b) else ""
-
-                if la != lb:
-                    diff_count += 1
-                    out.write(f"=== Diferencia en línea {line_number} ===\n")
-                    out.write(f"A: {la}\n")
-                    out.write(f"B: {lb}\n\n")
+        out.write("########################################\n")
+        out.write(f"TOTAL DIFERENCIAS (PARTE 1 + PARTE 2): {total_diffs}\n")
 
     return salida
 
@@ -132,9 +177,9 @@ def comparar_archivos_grandes(url_a: str, url_b: str) -> Path:
 @app.get("/comparar_grande")
 def comparar_grande():
     """
-    Compara los archivos GRANDES completamente (streaming).
+    Compara las PARTES GRANDES (part1 y part2) completamente (streaming).
     """
-    ruta = comparar_archivos_grandes(URL_A_GRANDE, URL_B_GRANDE)
+    ruta = comparar_archivos_grandes_por_partes()
     return FileResponse(ruta, media_type="text/plain", filename="reporte_grande.txt")
 
 
@@ -146,5 +191,5 @@ def comparar_grande():
 def root():
     return {
         "mensaje": "API ADN Docker funcionando",
-        "endpoints": ["/comparar", "/comparar_grande"]
+        "endpoints": ["/comparar", "/comparar_grande"],
     }
