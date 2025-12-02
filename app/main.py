@@ -59,7 +59,7 @@ def _descargar_stream(url: str) -> requests.Response:
 # ------------------------------------------------------------
 # Utilidades para el endpoint "pequeño" (quarters, primeras N líneas)
 # ------------------------------------------------------------
-def obtener_primeras_n_lineas(url: str, n: int = 5000) -> List[str]:
+def obtener_primeras_n_lineas(url: str, n: int = 2000) -> List[str]:
     """
     Descarga un archivo y devuelve sus primeras n líneas como texto (sin b'...').
     Pensado para pruebas rápidas con los quarters.
@@ -67,7 +67,6 @@ def obtener_primeras_n_lineas(url: str, n: int = 5000) -> List[str]:
     resp = _descargar_stream(url)
 
     lineas: List[str] = []
-    # iter_lines sin decode_unicode y decodificamos a mano => evitamos b'...'
     for raw in resp.iter_lines():
         if not raw:
             continue
@@ -79,6 +78,7 @@ def obtener_primeras_n_lineas(url: str, n: int = 5000) -> List[str]:
         if len(lineas) >= n:
             break
     return lineas
+
 
 
 def comparar_listas(A: List[str], B: List[str]) -> str:
@@ -115,12 +115,10 @@ def comparar_listas(A: List[str], B: List[str]) -> str:
 def comparar_pequeno():
     """
     Endpoint rápido:
-    Compara SOLO las primeras 5000 líneas de los archivos quarter A y B.
-
-    Este es el endpoint ligero, para demostrar la lógica sin reventar nada.
+    Compara SOLO las primeras 2000 líneas de los archivos quarter A y B.
     """
-    A = obtener_primeras_n_lineas(URL_ADN_A_QUARTER, n=5000)
-    B = obtener_primeras_n_lineas(URL_ADN_B_QUARTER, n=5000)
+    A = obtener_primeras_n_lineas(URL_ADN_A_QUARTER, n=2000)
+    B = obtener_primeras_n_lineas(URL_ADN_B_QUARTER, n=2000)
     reporte = comparar_listas(A, B)
     return reporte
 
